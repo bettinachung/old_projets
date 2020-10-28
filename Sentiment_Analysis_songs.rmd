@@ -1,0 +1,379 @@
+---
+title: "J'en ai marre"
+author: "Aurissa Tiv"
+date: "24/04/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+## I. Pr√©sentation du projet
+
+Le jeu de donn√©es contient les paroles de 57650 chansons. On va chercher √† trouver une partition de notre jeu de donn√©es pour voir quels groupes de chansons se d√©gagent du dataset. 
+
+Pour cela nous allons appliquer les algortihmes de classification non supervis√©s suivants: kmeans, CAH, CLARA. 
+
+
+```{r include=FALSE}
+library(readr)
+library(tidyr)
+library(cowplot)
+library(dplyr)
+library(ggplot2)
+library(forcats)
+library(tidytext) #package analyse des mots
+library(SnowballC) #identification mots de la m√™me famille Ex : partir, partant, part...
+library(wordcloud) #nuage des mots
+library(RColorBrewer)#couleur des mots
+songdata <- read_csv("songdata.csv")
+song<- as.tbl(songdata)
+```
+
+
+```{r}
+song[1:10,]
+```
+
+# II. Analyse exploratoire de la base de donn√©es
+
+
+Nous regardons les artistes pr√©sents dans la base. Il y en a 643. 
+On compte le nombre de chansons qu'a chaque artiste. 
+
+```{r include=FALSE}
+song = select(song, artist, song,link, text )
+artiste = song %>%
+  group_by(artist) %>% 
+  count() %>% 
+  rename('nb_song'='n') %>% 
+  arrange(-nb_song)
+top_20 = artiste[1:20,]
+
+moins_20 = artiste[623:642,] 
+
+```
+
+
+
+```{r}
+ggplot( top_20, aes(x=fct_reorder(artist, nb_song), y=nb_song)) +
+    geom_bar(stat="identity", fill="#f68060", alpha=.6, width=.7) +
+    coord_flip() + labs(title = "Top 20   des chanteurs")+
+    xlab("") 
+
+ggplot( moins_20, aes(x=fct_reorder(artist, desc(nb_song)), y=nb_song)) +
+    geom_bar(stat="identity", fill="#f68060", alpha=.6, width=.7) +
+    coord_flip() + labs(title = "Top 20 des chanteurs moins pr√©sents")+
+    xlab("")
+
+
+```
+
+En regardant les chanteurs pr√©sents dans la base on reconnait des chanteurs qui ne chantent pas en anglais. Contrairement √† ce que dis l'auteur sur la nature des ces donn√©es on a bien des textes qui ne sont pas en anglais. 
+Cela peut poser probl√®me dans la suite de notre analyse donc on va essayer de rep√©rer toutes les langues pr√©sentes dans le jeu de donn√©es.  
+
+On va enlever de la base les groupes Exo et Exo K groupes de chanteurs cor√©ens. On reconnait aussi la chanteuse fran√ßaise Zazie. 
+
+De plus on voit appara√Ætre un artiste "Unknown". On se doute bien qu'il ne s'agit pas du nom d'un artiste mais juste le fait qu'on ne connait pas l'auteur des chansons. En cherchant sur internet le nom de ces chansons on voit que ce sont des chasons pour enfants sauf pour "La Vie en Rose" qui est une chanson d√©j√† pr√©sente dans le jeu de donn√©es chant√©e par Cindy Lauper et Louis Amstrong. On va supprimer ces chansons du jeu de donn√©es. 
+
+
+### Traitement des chansons non anglaises #
+
+On regarde dans la base le texte des chansons et on enl√®ve les chansons en langue √©trang√®re. Il nous reste 57027 chansons. 
+
+```{r}
+'%ni%' <- Negate('%in%')
+
+song = song %>% 
+  filter(artist %ni% c("Exo","Exo-K","Unknown","Dewa 19","Freestyle","Imago","	Iwan Fals","Lata Mangeshkar","O-Zone","Regine Velasquez","Ungu","Utada Hikaru","Yeng Constantino","Andrea Bocelli","Ariel Rivera","Carol Banawa","Iwan Fals","Kyla","Zazie","Gary Valenciano","Lea Salonga")) %>% 
+  filter(song %ni% c("Fernando (In Spanish)","Sogno","Voglio Restare Cosi","Para De Jugar","Se Te Ne Vai (Si Tu Te Vas)","As Baile","Kung Maaalala Mo","Maging Sino Ka Man","May Minamahal","Muntik Na Kitang Minahal","A Tu Vera","	Un Baiser D'enfant","Buti Na Lang","Bakit Labis Kitang Mahal","Minsan, Isang Kahapon","Mula Noon, Hanggang Ngayon","Ngayon Pa Lang Tagumpay Ka Na","Sa Ugoy Ng Duyan","Tagumpay Nating Lahat","Castle On A Cloud (Dutch)","Der Rhythmus Der Hitze","Handauflegen","Laissez-Moi Tranquille","Diavolo In Me","Dune Mosse","Il Volo","Pene","Senza Una Donna","Va' Pensiero","X Colpa Di Chi?","Je Ne Veux Pas","Les Chemins De Ma Maison","Les Derniers Seront Les Premiers","Lolita","Lolita (Trop Jeune Pour Aimer)","L'Univers A Besoin D'Amour","Besame Mucho","Esperienza Religiosa (Experiencia Religiosa)","'di Bale Na Lang","Di Na Natuto","Eto Nanaman","Love In Any Language","Paano","Pasko Na Sinta Ko","Sana Maulit Muli","Tayong Dalawa","Wag Mo Na Sanang Isipin","Paskong Kay Ganda","Mi Mancherai","Mia Per Sempre","O Come All Ye Faithful","Panis Angelicus","So Sick (Tagalog Version)","Darei 10 Anni","I Tuoi Capricci","Il Re Dei Pagliacci","L'ultimo Appuntamento","Arrivederci Roma","Nah Goa Jail","Oh Bumbo Klaat","Message To Harry Manback")) %>% 
+  filter(link %ni% c("/c/celine+dion/carmen_20028365.html","/c/celine+dion/je+ne+vous+oublie+pas_20667418.html","/c/celine+dion/la+do+do+la+do_20028507.html","/c/celine+dion/la+religieuse_20667503.html","/c/celine+dion/laissons+entrer+le+soleil_20667278.html","/c/celine+dion/le+ballet_20028731.html","/c/christina+perri/ave+maria_21047534.html","/l/lea+salonga/cosmic+rescue_20629134.html","	/l/lea+salonga/i+am+but+a+small+voice_20081683.html","	/p/pitbull/be+alone+no_20903828.html","	/p/pearl+jam/happy+when+im+crying_20217935.html","/p/perry+como/ave+maria_10203734.html"))
+
+```
+
+
+## Traitement du texte 
+
+
+```{r}
+clean<- function(x) {
+  x = gsub("\\d+","", x)    #pour enlever les nombres
+  x = gsub("\\[.+?\\]"," ",x) 
+  x = gsub("\n"," ",x) #pour enlever les mots entre crochets 
+  x = tolower(x) # pour enlever les majuscules
+  return(x)
+}
+
+data(stop_words)
+
+mots = song %>% 
+  mutate(text_clean = clean(text))%>% 
+  select(artist,song,text_clean) %>% 
+  unnest_tokens(word,text_clean)#pour enlver les stopwords 
+
+words = mots %>% 
+   anti_join(stop_words,by='word')  
+
+word_freq = words %>%
+  count(word, sort = TRUE) 
+
+nrow(words)
+nrow(word_freq)
+
+```
+
+En enlevant les stopwords on se rend compte qu'on passe de pr√®s de 12 millions de mots √† un peu plus de 4 millions. De plus en comptant la fr√©quence d'apparition des mots on voit qu'il ne reste plus que 81 262 mots distincts. 
+
+**Statistiques √©l√©mentaires**
+```{r}
+ggplot(word_freq[1:20,], aes(x=fct_reorder(word, n), y=n)) +
+    geom_bar(stat="identity", fill="lightblue", width=.7) +
+    coord_flip() + labs(title = "Top 20 des mots les plus fr√©quents du jeu de donn√©es")+
+    xlab("") 
+
+```
+
+**Nombre de mots par chansons**
+
+
+Etude du nombre de mots par chanson (sans compter les stopwords) : 
+
+```{r}
+song_wrd_count<- mots %>%count(song)
+head(song_wrd_count)
+```
+
+
+```{r echo=FALSE}
+song_wrd_count %>% arrange(desc(n))%>%top_n(n=10)%>%ggplot(aes(x=factor(song,levels=song),y=n))+geom_col(fill="orange",size=1)+labs(x="song",y="word count",title="Top 10 des chansons qui ont le plus de mots")
+song_wrd_count %>% arrange(desc(n))%>%tail(n=10)%>%ggplot(aes(x=factor(song,levels=song),y=n))+geom_col(fill="lightblue",size=1)+labs(x="song",y="word count",title="Top 10 des chansons qui ont le moins de mots")+theme(axis.text.x = element_text(angle=90))
+```
+
+**Sentiment Analysis** 
+
+**NRC Lexicon**
+
+Le NRC Emotion Lexicon est une liste de mots en anglais avec leur associations ‡ 10 catÈgories d'Èmotions : 
+anger  
+anticipation  
+disgust  
+fear  
+joy  
+sadness  
+surprise  
+trust
+negative  
+positive 
+  
+```{r echo=FALSE}
+# Ajouter le nombre de mots des chansons ‡ mots pour utiliser dans l'analyse sentimentale
+lyric_counts <- mots %>%
+    left_join(song_wrd_count, by = "song")%>%rename(total_words=n)
+head(lyric_counts)
+```  
+
+On regarde les Tops 10 des mots pour chaque catÈgorie d'Èmotion, sans les catÈgories positive et nÈgative que l'on va Ètudier aprËs. 
+
+```{r echo=FALSE}
+lyric_sentiment<-mots %>% inner_join(get_sentiments("nrc"),by="word")
+lyric_sentiment %>%filter(!sentiment %in% c("positive","negative"))%>%count(word,sentiment,sort=TRUE)%>%group_by(sentiment)%>%top_n(n=10)%>%ungroup() %>%
+ggplot(aes(x=reorder(word,n),y=n,fill=sentiment))+geom_col(show.legend = FALSE)+facet_wrap(~sentiment,scales="free")+coord_flip()
+```  
+
+
+Le Tops 5 des chansons dans chaque catÈgorie d'Èmotion : 
+```{r echo=FALSE}
+
+lyric_sentiment %>%count(song,sentiment,sort=TRUE)%>%group_by(sentiment)%>%
+top_n(n=5)%>%ggplot(aes(x=reorder(song,n),y=n,fill=sentiment))+geom_bar(stat="identity",show.legend = FALSE)+facet_wrap(~sentiment,scales="free")+coord_flip()
+```
+
+
+Le Tops 5 artistes qui Ècrivent le plus dans chaque catÈgorie d'Èmotion : 
+
+```{r echo=FALSE}
+lyric_sentiment %>%count(artist,sentiment,sort=TRUE)%>%group_by(sentiment)%>% top_n(n=5)%>%ggplot(aes(x=reorder(artist,n),y=n,fill=sentiment))+geom_bar(stat="identity",show.legend = FALSE)+facet_wrap(~sentiment,scales="free")+coord_flip()
+```
+
+Insane Clown Posse Ècrit beaucoup de chansons dans les Èmotions anger, disgust, fear et sadness.
+
+Nous allons chercher ‡ Ètudier les tendances positives et nÈgatives des chansons. 
+
+## Bing Lexicon  
+
+Nous allons utiliser le lexique des paroles de chansons **Bing** pour identifier les mots positifs ou nÈgatifs des chansons. 
+
+Le Top 10 des chansons avec les plus de mots positifs/nÈgatifs : 
+```{r echo=FALSE}
+bng<-get_sentiments("bing")
+song_lex<- mots %>%inner_join(bng,by="word")
+song_sent<-song_lex %>%count(song,sentiment)
+song_sent%>%filter(sentiment=="positive")%>%arrange(desc(n))%>%head(10)%>%ggplot(aes(x=reorder(song,n),y=n))+geom_col(fill="green3")+labs(title="Top10 chansons - mots positifs",x="song",y="Nb de mots positifs")+coord_flip()
+song_sent%>%filter(sentiment=="negative")%>%arrange(desc(n))%>%head(10)%>%ggplot(aes(x=reorder(song,n),y=n))+geom_col(fill="salmon")+labs(title="Top10 chansons - mots nÈgatifs",x="song",y="Nb de mots nÈgatifs")+coord_flip()
+```
+  
+
+La fonction **bind_tf_idf** dans tidytext package permet d'identifier les mots rares dans le document. Elle diminue le poids des mots usuels et augmente le poids des mots rares.
+
+```{r echo=FALSE}
+uncommon_wrd<- mots%>%count(song,word)%>%bind_tf_idf(word, song, n)%>%arrange(desc(tf_idf))
+head(uncommon_wrd)
+```
+  
+```{r echo=FALSE}
+uncommon_wrd %>%arrange(desc(tf_idf))%>%head(20)%>%
+ggplot(aes(x=word,y=tf_idf,fill=song))+geom_col()+labs(x="words",title="Top20- mots associÈs aux chansons")+theme(axis.text.x=element_text(angle=90))
+
+```  
+
+Nous pouvons remarquer que la plupart des mots rares utilisÈs dans les chansons sont des mots utilisÈs pour des effets sonores, et n'ont pas de sens prÈcis.
+
+**Tokenization by n-gram**
+
+Nous allons voir quels sont les mots consÈcutifs les plus frÈquents, en utilisant n-gram et unnest_token.
+```{r echo=FALSE}
+lyrics_bigram <- unnest_tokens(songdata, input = text, output = bigram, token = "ngrams", n=2)
+
+
+bigram_filtered<-lyrics_bigram %>%separate(bigram,c("word1","word2",sep=" "))%>%
+filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+  
+ 
+  bigram_united <- bigram_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+head(bigram_united)
+  
+  bigram_counts <- bigram_united %>% 
+  count(bigram, sort = TRUE)
+  head(bigram_counts) 
+  
+   
+  bigram_counts %>% arrange(desc(n))%>% head(20)%>%ggplot(aes(x=factor(bigram,levels=bigram),y=n))+geom_bar(stat="identity",fill="#FF3E45")+labs(title="Top 20 bigram words in Songs")+coord_flip()
+  
+ 
+  wordcloud(bigram_counts$bigram,bigram_counts$n,max.words=50,random.order = F,colors=c("#9E0142", "#D53E4F", "#F46D43" ,"#FDAE61", "#FEE08B", "#E6F598" ,"#ABDDA4" ,"#66C2A5" ,"#3288BD", "#5E4FA2"))
+title(main="Bigram wordcloud")
+```
+
+```{r echo=FALSE}
+lyrics_trigram <- unnest_tokens(song_data, input = text, output = trigram, token = "ngrams", n=3)
+
+
+trigram_filtered<-lyrics_trigram %>%separate(trigram,c("word1","word2","word3",sep=" "))%>%
+filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(!word3 %in% stop_words$word)
+  
+ 
+  trigram_united <- trigram_filtered %>%
+  unite(trigram, word1, word2,word3, sep = " ")
+
+
+  
+  trigram_counts <- trigram_united %>% 
+  count(trigram, sort = TRUE)
+   
+  
+   
+  trigram_counts %>% arrange(desc(n))%>% head(20)%>%ggplot(aes(x=factor(trigram,levels=trigram),y=n))+geom_bar(stat="identity",fill="#003E45")+labs(title="Top 20 trigram words in Songs")+coord_flip()
+  
+ 
+  wordcloud(trigram_counts$trigram,trigram_counts$n,max.words=50,random.order = F,colors=c("#9E0142", "#D53E4F", "#F46D43" ,"#FDAE61", "#FEE08B", "#E6F598" ,"#ABDDA4" ,"#66C2A5" ,"#3288BD", "#5E4FA2"))
+title(main="rigram wordcloud")
+```
+
+Nous retrouvons sur les deux nuages de mots pour 2 et 3 mots consÈcutifs les mots utilisÈs pour un effet sonore, ne prÈsentant pas de sens particulier. 
+
+
+
+
+### Comparison cloud 
+
+
+Nuage de mots positifs et nÈgatifs : 
+```{r echo=FALSE}
+library(reshape2)
+
+tidy_lyrics %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("#F8766D", "#00BFC4"),
+                   max.words = 300)
+```  
+  
+
+
+
+
+**WordCloud**
+
+On affiche un nuage de mots pour voir les mots les plus r√©currents sur toutes les chansons. 
+
+```{r}
+word_freq %>% 
+  with(wordcloud(word,n, min.freq = 10,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")))
+
+```
+
+
+**Rolling Stones/ The Beatles**
+
+C'est la rivalit√© la plus embl√©matique du monde de la musique on va regarder si elle a lieu d'√™tre ou non. 
+
+```{r}
+test %>% 
+  filter(artist=='Rolling Stones')%>% 
+  with(wordcloud(word,n, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")))
+
+test %>% 
+  filter(artist=='The Beatles')%>% 
+  with(wordcloud(word,n, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")))
+
+```
+
+
+
+On va regarder maintenant s'il y a une grande diff√©rence de mots entre 2 artistes de genre musicaux totalement oppos√©s. On va par exemple prendre un chanteur country, un groupe de rock et un rappeur. 
+
+
+```{r}
+test = words %>% 
+  group_by(artist) %>% 
+  count(word) 
+
+test %>% 
+  filter(artist=='Kenny Rogers')%>% 
+  with(wordcloud(word,n, min.freq = 10,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")))
+
+test %>% 
+  filter(artist=='Kanye West')%>% 
+  with(wordcloud(word,n, min.freq = 1,
+          max.words=50, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")))
+
+test %>% 
+  filter(artist=='Queen')%>% 
+  with(wordcloud(word,n, min.freq = 1,
+          max.words=50, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")))
+
+```
+
+## clustering
+
+A priori on s'attend √† ce que les clusters regroupent les 
+
+
+## R√®gles d'association
